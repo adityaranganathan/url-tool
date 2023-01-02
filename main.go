@@ -18,38 +18,45 @@ func main() {
 type URLInfo struct {
 	URL      string
 	BodySize int
+	err      error
 }
 
 func GetURLInfo(urls []string) []URLInfo {
-	var result []URLInfo
+	channel := make(chan URLInfo)
 	for _, url := range urls {
-		size, err := GetResponseBodySize(url)
-		if err != nil {
-			log.Printf(err.Error())
+		go GetResponseBodySize(url, channel)
+	}
+
+	var result []URLInfo
+	for i := 0; i < len(urls); i++ {
+		info := <-channel
+		if info.err != nil {
+			log.Printf(info.err.Error())
 			continue
 		}
-
-		result = append(result, URLInfo{
-			URL:      url,
-			BodySize: size,
-		})
+		result = append(result, info)
 	}
 
 	return result
 }
 
-func GetResponseBodySize(url string) (int, error) {
+func GetResponseBodySize(url string, channel chan URLInfo) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("fetching url response of %s: %w", url, err)
+		channel <- URLInfo{err: fmt.Errorf("fetching url response of %s: %w", url, err)}
+		return
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("reading response body: %w", err)
+		channel <- URLInfo{err: fmt.Errorf("reading response body: %s", err)}
+		return
 	}
 
-	return len(body), nil
+	channel <- URLInfo{
+		URL:      url,
+		BodySize: len(body),
+	}
 }
 
 func DisplayURLInfo(data []URLInfo) {
